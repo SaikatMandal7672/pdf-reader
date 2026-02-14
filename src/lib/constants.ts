@@ -1,0 +1,9 @@
+export const COOKIE_NAME = "admin_token";
+export const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+export const ZOOM_MIN = 0.5;
+export const ZOOM_MAX = 3;
+export const ZOOM_STEP = 0.25;
+export const DEFAULT_SCALE = 1.5;
+export const THUMBNAIL_WIDTH = 200;
+export const TOKEN_EXPIRY_SECONDS = 60 * 60 * 24; // 24 hours
+export const TOKEN_EXPIRY_STRING = "24h";
