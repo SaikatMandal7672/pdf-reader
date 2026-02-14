@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { FileText, Calendar, HardDrive, Search, X } from "lucide-react";
+import { FileText, Calendar, HardDrive, Search, X, ShieldCheck } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -52,11 +52,19 @@ export default function HomePage() {
     <div className="min-h-screen bg-background">
       <Header />
       <main className="container mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight">Documents</h1>
-          <p className="mt-1 text-muted-foreground">
-            Browse and read available PDFs
-          </p>
+        <div className="mb-8 flex items-start justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Documents</h1>
+            <p className="mt-1 text-muted-foreground">
+              Browse and read available PDFs
+            </p>
+          </div>
+          <Link href="/admin/login">
+            <Button variant="outline" size="sm">
+              <ShieldCheck className="mr-2 h-4 w-4" />
+              Admin
+            </Button>
+          </Link>
         </div>
 
         {/* Search */}
