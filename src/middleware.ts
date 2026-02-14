@@ -13,10 +13,12 @@ function getSecret(): Uint8Array {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Protect admin API routes (upload & delete only)
+  // Protect admin API routes (upload, delete, visibility toggle)
   if (
     pathname.startsWith("/api/files") &&
-    (request.method === "POST" || request.method === "DELETE")
+    (request.method === "POST" ||
+      request.method === "DELETE" ||
+      request.method === "PATCH")
   ) {
     const token = request.cookies.get(COOKIE_NAME)?.value;
     if (!token) {

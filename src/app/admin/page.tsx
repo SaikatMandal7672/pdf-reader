@@ -40,6 +40,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Header } from "@/components/header";
 import { formatFileSize, formatDate, getDisplayName } from "@/lib/format";
@@ -70,7 +71,7 @@ export default function AdminDashboard() {
       .catch(() => router.push("/admin/login"));
   }, [router]);
 
-  // Fetch files
+  // Fetch files (admin view — includes private files)
   useEffect(() => {
     if (!authenticated) return;
     fetchFiles();
@@ -78,8 +79,9 @@ export default function AdminDashboard() {
 
   async function fetchFiles() {
     try {
-      const res = await fetch("/api/files");
-      const data = await res.json();
+      const res = await fetch("/api/files?admin=true");
+      if (!res.ok) throw new Error("Failed to fetch");
+      const data: PdfFile[] = await res.json();
       setFiles(data);
     } catch {
       toast.error("Failed to fetch files");
@@ -121,6 +123,35 @@ export default function AdminDashboard() {
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
+    }
+  }
+
+  async function handleToggleVisibility(
+    fileName: string,
+    currentlyPublic: boolean
+  ) {
+    try {
+      const res = await fetch(`/api/files/${encodeURIComponent(fileName)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_public: !currentlyPublic }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.name === fileName ? { ...f, is_public: data.is_public } : f
+          )
+        );
+        toast.success(
+          data.is_public ? "Document is now public" : "Document is now private"
+        );
+      } else {
+        toast.error("Failed to update visibility");
+      }
+    } catch {
+      toast.error("Failed to update visibility");
     }
   }
 
@@ -238,6 +269,7 @@ export default function AdminDashboard() {
                       <TableHead>Name</TableHead>
                       <TableHead>Size</TableHead>
                       <TableHead>Uploaded</TableHead>
+                      <TableHead>Visibility</TableHead>
                       <TableHead className="w-[80px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -260,6 +292,26 @@ export default function AdminDashboard() {
                             <Calendar className="h-3 w-3" />
                             {formatDate(file.created_at, true)}
                           </span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              checked={file.is_public}
+                              onCheckedChange={() =>
+                                handleToggleVisibility(
+                                  file.name,
+                                  file.is_public
+                                )
+                              }
+                            />
+                            <Badge
+                              variant={
+                                file.is_public ? "secondary" : "outline"
+                              }
+                            >
+                              {file.is_public ? "Public" : "Private"}
+                            </Badge>
+                          </div>
                         </TableCell>
                         <TableCell>
                           <AlertDialog>

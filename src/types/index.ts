@@ -3,4 +3,5 @@ export interface PdfFile {
   name: string;
   size: number;
   created_at: string;
+  is_public: boolean;
 }
