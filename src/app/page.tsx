@@ -77,7 +77,7 @@ export default function HomePage() {
               Browse and read available PDFs
             </p>
           </div>
-          <Link href="/admin/login">
+          <Link href="/admin/login" target="_blank" rel="noopener noreferrer">
             <Button variant="outline" size="sm">
               <ShieldCheck className="mr-2 h-4 w-4" />
               Admin
