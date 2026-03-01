@@ -27,7 +27,7 @@ export async function generateTags(
     const response = await client.chat.completions.create({
       model: "gpt-5-mini",
       max_completion_tokens: 200,
-      temperature: 0.2,
+      temperature: 1,
       messages: [
         {
           role: "system",
