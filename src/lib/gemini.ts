@@ -2,7 +2,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
-const MAX_INLINE_SIZE = 15 * 1024 * 1024; // 15MB — Gemini inline data limit
+const MAX_INLINE_SIZE = 3 * 1024 * 1024; // 3MB — keeps page count low, avoids 1000 page limit
 
 export async function generateTags(
   pdfBuffer: Buffer
@@ -12,7 +12,7 @@ export async function generateTags(
   }
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     // Send PDF directly to Gemini — no text extraction needed
     const data = pdfBuffer.length > MAX_INLINE_SIZE
