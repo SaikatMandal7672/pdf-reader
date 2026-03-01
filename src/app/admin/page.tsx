@@ -44,6 +44,7 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Header } from "@/components/header";
 import { formatFileSize, formatDate, getDisplayName } from "@/lib/format";
+import { MAX_FILE_SIZE } from "@/lib/constants";
 import { toast } from "sonner";
 import type { PdfFile } from "@/types";
 
@@ -99,21 +100,53 @@ export default function AdminDashboard() {
       return;
     }
 
+    if (file.size > MAX_FILE_SIZE) {
+      toast.error(`File size exceeds ${MAX_FILE_SIZE / (1024 * 1024)}MB limit`);
+      return;
+    }
+
     setUploading(true);
-    const formData = new FormData();
-    formData.append("file", file);
 
     try {
-      const res = await fetch("/api/files", {
+      // Step 1: Get a signed upload URL from our API (tiny request, no file body)
+      const urlRes = await fetch("/api/files", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: file.name, fileSize: file.size }),
       });
 
-      if (res.ok) {
+      if (!urlRes.ok) {
+        const data = await urlRes.json();
+        toast.error(data.error || "Failed to initiate upload");
+        return;
+      }
+
+      const { signedUrl, path } = await urlRes.json();
+
+      // Step 2: Upload the file directly to Supabase Storage (bypasses Vercel's 4.5MB limit)
+      const uploadRes = await fetch(signedUrl, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": "application/pdf" },
+      });
+
+      if (!uploadRes.ok) {
+        toast.error("Upload failed");
+        return;
+      }
+
+      // Step 3: Register the uploaded file in the database
+      const registerRes = await fetch("/api/files/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      });
+
+      if (registerRes.ok) {
         toast.success("PDF uploaded successfully");
         fetchFiles();
       } else {
-        const data = await res.json();
+        const data = await registerRes.json();
         toast.error(data.error || "Upload failed");
       }
     } catch {

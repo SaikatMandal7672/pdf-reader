@@ -52,55 +52,49 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(files);
 }
 
-// POST /api/files — upload a PDF (admin only)
+// POST /api/files — generate a signed upload URL (admin only)
+// The client uploads the file directly to Supabase to avoid Vercel's 4.5MB body limit.
+// After uploading, the client must call POST /api/files/register to record the file in the DB.
 export async function POST(request: NextRequest) {
   if (!(await isAdmin())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const formData = await request.formData();
-  const file = formData.get("file");
+  const body = await request.json();
+  const { fileName, fileSize } = body;
 
-  if (!(file instanceof File)) {
-    return NextResponse.json({ error: "No file provided" }, { status: 400 });
+  if (!fileName || typeof fileName !== "string") {
+    return NextResponse.json({ error: "fileName is required" }, { status: 400 });
   }
 
-  if (!file.name.toLowerCase().endsWith(".pdf")) {
+  if (!fileName.toLowerCase().endsWith(".pdf")) {
     return NextResponse.json(
       { error: "Only PDF files are allowed" },
       { status: 400 }
     );
   }
 
-  if (file.size > MAX_FILE_SIZE) {
+  if (typeof fileSize === "number" && fileSize > MAX_FILE_SIZE) {
     return NextResponse.json(
       { error: `File size exceeds ${MAX_FILE_SIZE / (1024 * 1024)}MB limit` },
       { status: 400 }
     );
   }
 
-  const baseName = file.name.split(/[/\\]/).pop() ?? "upload.pdf";
+  const baseName = fileName.split(/[/\\]/).pop() ?? "upload.pdf";
   const safeName = baseName.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const fileName = `${Date.now()}-${safeName}`;
+  const storagePath = `${Date.now()}-${safeName}`;
 
-  const arrayBuffer = await file.arrayBuffer();
-
-  const { error } = await supabase.storage
+  const { data, error } = await supabase.storage
     .from(BUCKET_NAME)
-    .upload(fileName, new Uint8Array(arrayBuffer), {
-      contentType: "application/pdf",
-      upsert: false,
-    });
+    .createSignedUploadUrl(storagePath);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error || !data) {
+    return NextResponse.json(
+      { error: error?.message ?? "Failed to create upload URL" },
+      { status: 500 }
+    );
   }
 
-  try {
-    await ensurePdfFileRow(fileName, true);
-  } catch (dbError) {
-    console.error("Failed to create pdf_files row:", dbError);
-  }
-
-  return NextResponse.json({ success: true, fileName });
+  return NextResponse.json({ signedUrl: data.signedUrl, path: storagePath });
 }
