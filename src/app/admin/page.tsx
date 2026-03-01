@@ -48,6 +48,7 @@ import { Separator } from "@/components/ui/separator";
 import { Header } from "@/components/header";
 import { formatFileSize, formatDate, getDisplayName } from "@/lib/format";
 import { MAX_FILE_SIZE } from "@/lib/constants";
+import { maybeCompressPdf, COMPRESS_THRESHOLD_MB } from "@/lib/compress-pdf";
 import { toast } from "sonner";
 import type { PdfFile } from "@/types";
 
@@ -58,7 +59,7 @@ export default function AdminDashboard() {
   const [taggingFile, setTaggingFile] = useState<string | null>(null);
   const [bulkTagging, setBulkTagging] = useState(false);
   const [bulkTagProgress, setBulkTagProgress] = useState<{ current: number; total: number } | null>(null);
-  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; status?: string } | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [checking, setChecking] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -108,6 +109,11 @@ export default function AdminDashboard() {
     if (existingNames.has(displayName)) return "duplicate";
 
     try {
+      // Compress if over threshold
+      file = await maybeCompressPdf(file, (msg) => {
+        setUploadProgress((p) => p ? { ...p, status: msg } : null);
+      });
+
       const urlRes = await fetch("/api/files", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -354,7 +360,7 @@ export default function AdminDashboard() {
               Upload PDF
             </CardTitle>
             <CardDescription>
-              Select a PDF file to upload. Max recommended size: 50MB.
+              Select a PDF file to upload. Files over {COMPRESS_THRESHOLD_MB}MB are automatically compressed to ~10MB before uploading.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -375,7 +381,9 @@ export default function AdminDashboard() {
             </div>
             {uploading && uploadProgress && (
               <p className="mt-3 text-sm text-muted-foreground animate-pulse">
-                Uploading {uploadProgress.current} / {uploadProgress.total}...
+                {uploadProgress.status
+                  ? `${uploadProgress.current} / ${uploadProgress.total} — ${uploadProgress.status}`
+                  : `Uploading ${uploadProgress.current} / ${uploadProgress.total}...`}
               </p>
             )}
           </CardContent>
