@@ -12,6 +12,7 @@ import {
   LogOut,
   BarChart2,
   Sparkles,
+  Minimize2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,6 +60,8 @@ export default function AdminDashboard() {
   const [taggingFile, setTaggingFile] = useState<string | null>(null);
   const [bulkTagging, setBulkTagging] = useState(false);
   const [bulkTagProgress, setBulkTagProgress] = useState<{ current: number; total: number } | null>(null);
+  const [compressing, setCompressing] = useState(false);
+  const [compressProgress, setCompressProgress] = useState<{ current: number; total: number; status?: string } | null>(null);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; status?: string } | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -272,6 +275,65 @@ export default function AdminDashboard() {
     }
   }
 
+  const COMPRESS_THRESHOLD = 15 * 1024 * 1024;
+
+  async function handleCompressAll() {
+    const largeFiles = files.filter((f) => f.size > COMPRESS_THRESHOLD);
+    if (largeFiles.length === 0) return;
+
+    setCompressing(true);
+
+    for (let i = 0; i < largeFiles.length; i++) {
+      const file = largeFiles[i];
+      setCompressProgress({ current: i + 1, total: largeFiles.length, status: "Downloading..." });
+
+      try {
+        // Download from Supabase via our API
+        const res = await fetch(`/api/files/${encodeURIComponent(file.name)}`);
+        if (!res.ok) throw new Error("Download failed");
+        const blob = await res.blob();
+        const fileObj = new File([blob], file.name, { type: "application/pdf" });
+
+        // Compress in browser
+        const { maybeCompressPdf } = await import("@/lib/compress-pdf");
+        const compressed = await maybeCompressPdf(fileObj, (msg) =>
+          setCompressProgress({ current: i + 1, total: largeFiles.length, status: msg })
+        );
+
+        if (compressed.size >= fileObj.size) {
+          // No meaningful compression achieved — skip re-upload
+          continue;
+        }
+
+        setCompressProgress({ current: i + 1, total: largeFiles.length, status: "Uploading..." });
+
+        // Get signed upload URL for same path (overwrites existing file)
+        const urlRes = await fetch("/api/files", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileName: file.name, fileSize: compressed.size }),
+        });
+        if (!urlRes.ok) throw new Error("Failed to get upload URL");
+        const { signedUrl } = await urlRes.json();
+
+        // Upload compressed file directly — skip register (DB row already exists)
+        await fetch(signedUrl, {
+          method: "PUT",
+          body: compressed,
+          headers: { "Content-Type": "application/pdf" },
+        });
+
+        toast.success(`Compressed ${getDisplayName(file.name)} — ${(compressed.size / 1024 / 1024).toFixed(1)}MB`);
+      } catch {
+        toast.error(`Failed to compress ${getDisplayName(file.name)}`);
+      }
+    }
+
+    setCompressing(false);
+    setCompressProgress(null);
+    fetchFiles();
+  }
+
   async function handleTagAll() {
     const untagged = files.filter((f) => !f.tags || f.tags.length === 0);
     if (untagged.length === 0) {
@@ -398,6 +460,19 @@ export default function AdminDashboard() {
                 Uploaded Files
               </span>
               <div className="flex items-center gap-2">
+                {files.some((f) => f.size > COMPRESS_THRESHOLD) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCompressAll}
+                    disabled={compressing || loading}
+                  >
+                    <Minimize2 className="mr-2 h-4 w-4" />
+                    {compressing && compressProgress
+                      ? `${compressProgress.current} / ${compressProgress.total} — ${compressProgress.status ?? "Compressing..."}`
+                      : "Compress Large Files"}
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
