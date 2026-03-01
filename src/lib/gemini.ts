@@ -25,18 +25,25 @@ export async function generateTags(
     }
 
     const response = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      max_tokens: 120,
+      model: "gpt-4o",
+      max_tokens: 150,
       temperature: 0.2,
       messages: [
         {
           role: "system",
-          content:
-            "You are a tagging system for a technical PDF library. If a table of contents is present, use it to determine the main topics. Return ONLY a valid JSON array of 3-6 lowercase tags (max 3 words each). No explanation, no markdown, just the JSON array. Avoid generic tags like 'technical book', 'publisher details', 'trademark information'.",
+          content: `You are a tagging system for a technical PDF library. Generate 5-8 specific, meaningful tags that precisely describe what a reader will LEARN from this book.
+
+Rules:
+- Use specific technical concepts, algorithms, tools, frameworks, patterns (e.g. "b-tree indexing", "gradient descent", "dependency injection")
+- Include the primary programming language if relevant (e.g. "golang", "python", "c++")
+- Include the domain (e.g. "system design", "machine learning", "database internals")
+- NEVER use generic tags like "technical book", "programming", "software development", "introduction", "publisher details"
+- If a table of contents is present, use it as the primary signal
+- Return ONLY a valid JSON array of lowercase strings, no explanation, no markdown`,
         },
         {
           role: "user",
-          content: `Generate tags for this document based on its content and table of contents:\n\n${excerpt}`,
+          content: `Generate precise tags for this document:\n\n${excerpt}`,
         },
       ],
     });
