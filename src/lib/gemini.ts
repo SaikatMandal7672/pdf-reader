@@ -33,7 +33,7 @@ Example output: ["system design", "distributed systems", "databases"]`
     const raw = result.response.text().trim();
 
     // Extract JSON array from response
-    const match = raw.match(/\[.*\]/s);
+    const match = raw.match(/\[[\s\S]*\]/);
     if (!match) return [];
 
     const tags: unknown = JSON.parse(match[0]);
