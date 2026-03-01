@@ -12,7 +12,7 @@ export async function generateTags(
   }
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     // Send PDF directly to Gemini — no text extraction needed
     const data = pdfBuffer.length > MAX_INLINE_SIZE
