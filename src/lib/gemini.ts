@@ -2,15 +2,22 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
-export async function generateTags(pdfBuffer: Buffer): Promise<string[]> {
+export async function generateTags(
+  pdfBuffer: Buffer
+): Promise<{ tags: string[]; debug?: string }> {
+  if (!process.env.GEMINI_API_KEY) {
+    return { tags: [], debug: "GEMINI_API_KEY is not set" };
+  }
+
   try {
-    // Extract text from PDF using pdf-parse
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const pdfParse = await import("pdf-parse").then((m) => (m as any).default ?? m);
-    const data = await pdfParse(pdfBuffer, { max: 3 }); // first 3 pages only
+    const data = await pdfParse(pdfBuffer, { max: 3 });
     const text = data.text.slice(0, 3000).trim();
 
-    if (!text) return [];
+    if (!text) {
+      return { tags: [], debug: "No text extracted from PDF (possibly image-based)" };
+    }
 
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
@@ -31,19 +38,24 @@ Example output: ["system design", "distributed systems", "databases"]`
     );
 
     const raw = result.response.text().trim();
-
-    // Extract JSON array from response
     const match = raw.match(/\[[\s\S]*\]/);
-    if (!match) return [];
 
-    const tags: unknown = JSON.parse(match[0]);
-    if (!Array.isArray(tags)) return [];
+    if (!match) {
+      return { tags: [], debug: `Gemini response was not a JSON array: ${raw.slice(0, 200)}` };
+    }
 
-    return tags
+    const parsed: unknown = JSON.parse(match[0]);
+    if (!Array.isArray(parsed)) {
+      return { tags: [], debug: "Parsed JSON was not an array" };
+    }
+
+    const tags = parsed
       .filter((t): t is string => typeof t === "string")
       .map((t) => t.toLowerCase().trim())
       .slice(0, 8);
-  } catch {
-    return [];
+
+    return { tags };
+  } catch (err) {
+    return { tags: [], debug: err instanceof Error ? err.message : String(err) };
   }
 }

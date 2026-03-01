@@ -35,7 +35,8 @@ export async function POST(request: NextRequest) {
       if (error || !data) return;
 
       const buffer = Buffer.from(await data.arrayBuffer());
-      const tags = await generateTags(buffer);
+      const { tags, debug } = await generateTags(buffer);
+      if (debug) console.log("[generate-tags]", debug);
       if (tags.length > 0) {
         await updateFileTags(path, tags);
       }

@@ -26,11 +26,11 @@ export async function POST(request: NextRequest) {
   }
 
   const buffer = Buffer.from(await data.arrayBuffer());
-  const tags = await generateTags(buffer);
+  const { tags, debug } = await generateTags(buffer);
 
   if (tags.length > 0) {
     await updateFileTags(fileName, tags);
   }
 
-  return NextResponse.json({ success: true, tags });
+  return NextResponse.json({ success: true, tags, debug });
 }
