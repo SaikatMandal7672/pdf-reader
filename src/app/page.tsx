@@ -86,9 +86,9 @@ export default function HomePage() {
         </div>
 
         {!loading && files.length > 0 && (
-          <div className="mb-6 space-y-3">
+          <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start">
             {/* Search */}
-            <div className="relative max-w-md">
+            <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Search documents..."
@@ -110,7 +110,7 @@ export default function HomePage() {
 
             {/* Tag search bar */}
             {allTags.length > 0 && (
-              <div className="relative max-w-md">
+              <div className="relative flex-1">
                 <Tag className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   placeholder="Search by tag..."
