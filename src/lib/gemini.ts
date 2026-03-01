@@ -16,8 +16,9 @@ export async function generateTags(
       mergePages: true,
     });
 
-    // Keep only first 1500 chars to minimise token usage
-    const excerpt = text.slice(0, 1500).trim();
+    // Skip first 500 chars (usually cover/copyright) and take up to 6000 chars
+    // to cover the table of contents which gives the best topic signal
+    const excerpt = text.slice(500, 6500).trim();
 
     if (!excerpt) {
       return { tags: [], debug: "No text extracted from PDF (possibly image-based or encrypted)" };
@@ -25,17 +26,17 @@ export async function generateTags(
 
     const response = await client.chat.completions.create({
       model: "gpt-4o-mini",
-      max_tokens: 80, // tags are short — save tokens
+      max_tokens: 120,
       temperature: 0.2,
       messages: [
         {
           role: "system",
           content:
-            "You are a tagging system for a technical PDF library. Return ONLY a valid JSON array of 3-6 lowercase tags (max 3 words each). No explanation, no markdown, just the JSON array.",
+            "You are a tagging system for a technical PDF library. If a table of contents is present, use it to determine the main topics. Return ONLY a valid JSON array of 3-6 lowercase tags (max 3 words each). No explanation, no markdown, just the JSON array. Avoid generic tags like 'technical book', 'publisher details', 'trademark information'.",
         },
         {
           role: "user",
-          content: `Generate tags for this document excerpt:\n\n${excerpt}`,
+          content: `Generate tags for this document based on its content and table of contents:\n\n${excerpt}`,
         },
       ],
     });
