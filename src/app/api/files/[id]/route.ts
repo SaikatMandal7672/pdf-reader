@@ -71,7 +71,9 @@ async function _handleGet(
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": "inline",
-      "Cache-Control": "private, no-store",
+      "Cache-Control": isPublic
+        ? "public, max-age=3600, stale-while-revalidate=86400"
+        : "private, no-store",
       "X-Content-Type-Options": "nosniff",
     },
   });
