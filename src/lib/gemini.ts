@@ -93,11 +93,12 @@ GOOD: ["api decomposition", "microservices migration", "payment gateway", "rest 
       ],
     });
 
-    const raw = response.choices[0]?.message?.content?.trim() ?? "";
+    const msg = response.choices[0]?.message;
+    const raw = (msg?.content ?? (msg as unknown as Record<string, string>)?.reasoning ?? "").trim();
     const match = raw.match(/\[[\s\S]*\]/);
 
     if (!match) {
-      return { tags: [], debug: `Unexpected response: ${raw.slice(0, 200)}` };
+      return { tags: [], debug: `Unexpected response: "${raw.slice(0, 300)}" | finish_reason: ${response.choices[0]?.finish_reason}` };
     }
 
     const parsed: unknown = JSON.parse(match[0]);
