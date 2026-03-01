@@ -1,46 +1,50 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from "openai";
+import { extractText } from "unpdf";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-
-const MAX_INLINE_SIZE = 3 * 1024 * 1024; // 3MB — keeps page count low, avoids 1000 page limit
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export async function generateTags(
   pdfBuffer: Buffer
 ): Promise<{ tags: string[]; debug?: string }> {
-  if (!process.env.GEMINI_API_KEY) {
-    return { tags: [], debug: "GEMINI_API_KEY is not set" };
+  if (!process.env.OPENAI_API_KEY) {
+    return { tags: [], debug: "OPENAI_API_KEY is not set" };
   }
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    // Extract text from first 3 pages using unpdf (serverless-safe)
+    const { text } = await extractText(new Uint8Array(pdfBuffer), {
+      mergePages: true,
+    });
 
-    // Send PDF directly to Gemini — no text extraction needed
-    const data = pdfBuffer.length > MAX_INLINE_SIZE
-      ? pdfBuffer.subarray(0, MAX_INLINE_SIZE)
-      : pdfBuffer;
+    // Keep only first 1500 chars to minimise token usage
+    const excerpt = text.slice(0, 1500).trim();
 
-    const result = await model.generateContent([
-      {
-        inlineData: {
-          mimeType: "application/pdf",
-          data: data.toString("base64"),
+    if (!excerpt) {
+      return { tags: [], debug: "No text extracted from PDF (possibly image-based or encrypted)" };
+    }
+
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      max_tokens: 80, // tags are short — save tokens
+      temperature: 0.2,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a tagging system for a technical PDF library. Return ONLY a valid JSON array of 3-6 lowercase tags (max 3 words each). No explanation, no markdown, just the JSON array.",
         },
-      },
-      `Generate 3 to 6 short, relevant tags describing the main topics of this document.
-Rules:
-- Tags must be lowercase
-- Max 3 words per tag
-- Return ONLY a valid JSON array of strings, nothing else
-- Focus on technical topics, concepts, and domains
+        {
+          role: "user",
+          content: `Generate tags for this document excerpt:\n\n${excerpt}`,
+        },
+      ],
+    });
 
-Example output: ["system design", "distributed systems", "databases"]`,
-    ]);
-
-    const raw = result.response.text().trim();
+    const raw = response.choices[0]?.message?.content?.trim() ?? "";
     const match = raw.match(/\[[\s\S]*\]/);
 
     if (!match) {
-      return { tags: [], debug: `Unexpected Gemini response: ${raw.slice(0, 200)}` };
+      return { tags: [], debug: `Unexpected response: ${raw.slice(0, 200)}` };
     }
 
     const parsed: unknown = JSON.parse(match[0]);
