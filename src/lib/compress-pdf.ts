@@ -85,7 +85,7 @@ async function lossyCompress(
 
       const result = await tempDoc.save({ useObjectStreams: true });
       if (result.byteLength <= TARGET_SIZE || quality <= minQuality) {
-        return new File([result], file.name, { type: "application/pdf" });
+        return new File([result.buffer.slice(0) as ArrayBuffer], file.name, { type: "application/pdf" });
       }
 
       quality = Math.max(minQuality, quality - step);
