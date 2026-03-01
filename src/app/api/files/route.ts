@@ -30,10 +30,9 @@ export async function GET(request: NextRequest) {
   const files: PdfFile[] = [];
   for (const obj of objects) {
     const name = obj.Key!;
-    let isPublic = visibilityMap.get(name);
+    const meta = visibilityMap.get(name);
 
-    if (isPublic === undefined) {
-      isPublic = true;
+    if (meta === undefined) {
       ensurePdfFileRow(name, true).catch(() => {});
     }
 
@@ -42,7 +41,8 @@ export async function GET(request: NextRequest) {
       name,
       size: obj.Size ?? 0,
       created_at: obj.LastModified?.toISOString() ?? new Date().toISOString(),
-      is_public: isPublic,
+      is_public: meta?.is_public ?? true,
+      tags: meta?.tags ?? [],
     });
   }
 

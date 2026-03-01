@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { FileText, Calendar, HardDrive, Search, X, ShieldCheck } from "lucide-react";
+import { FileText, Calendar, HardDrive, Search, X, ShieldCheck, Tag } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Header } from "@/components/header";
 import { PdfThumbnail } from "@/components/pdf-thumbnail";
@@ -23,6 +24,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [activeTag, setActiveTag] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/files")
@@ -40,13 +42,22 @@ export default function HomePage() {
       });
   }, []);
 
+  // All unique tags across all files
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    files.forEach((f) => f.tags?.forEach((t) => set.add(t)));
+    return Array.from(set).sort();
+  }, [files]);
+
   const filtered = useMemo(() => {
-    if (!search.trim()) return files;
-    const query = search.toLowerCase();
-    return files.filter((f) =>
-      getDisplayName(f.name).toLowerCase().includes(query)
-    );
-  }, [files, search]);
+    return files.filter((f) => {
+      const matchesSearch = search.trim()
+        ? getDisplayName(f.name).toLowerCase().includes(search.toLowerCase())
+        : true;
+      const matchesTag = activeTag ? f.tags?.includes(activeTag) : true;
+      return matchesSearch && matchesTag;
+    });
+  }, [files, search, activeTag]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -67,25 +78,54 @@ export default function HomePage() {
           </Link>
         </div>
 
-        {/* Search */}
         {!loading && files.length > 0 && (
-          <div className="relative mb-6 max-w-md">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search documents..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 pr-9"
-            />
-            {search && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2"
-                onClick={() => setSearch("")}
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
+          <div className="mb-6 space-y-3">
+            {/* Search */}
+            <div className="relative max-w-md">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search documents..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 pr-9"
+              />
+              {search && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2"
+                  onClick={() => setSearch("")}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+
+            {/* Tag filter */}
+            {allTags.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Tag className="h-3.5 w-3.5 text-muted-foreground" />
+                {allTags.map((tag) => (
+                  <Badge
+                    key={tag}
+                    variant={activeTag === tag ? "default" : "secondary"}
+                    className="cursor-pointer transition-colors"
+                    onClick={() => setActiveTag(activeTag === tag ? null : tag)}
+                  >
+                    {tag}
+                  </Badge>
+                ))}
+                {activeTag && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setActiveTag(null)}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -119,7 +159,7 @@ export default function HomePage() {
         ) : filtered.length === 0 ? (
           <div className="flex h-[30vh] flex-col items-center justify-center gap-3 text-muted-foreground">
             <Search className="h-10 w-10" />
-            <p className="text-lg">No documents match &ldquo;{search}&rdquo;</p>
+            <p className="text-lg">No documents match your filters</p>
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -134,7 +174,7 @@ export default function HomePage() {
                       fileUrl={`/api/files/${encodeURIComponent(file.name)}`}
                     />
                   </div>
-                  <CardHeader className="pb-3 pt-4">
+                  <CardHeader className="pb-2 pt-4">
                     <CardTitle className="flex items-start gap-2 text-sm font-medium">
                       <FileText className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                       <span className="line-clamp-2 break-all">
@@ -142,7 +182,7 @@ export default function HomePage() {
                       </span>
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="pt-0 pb-4">
+                  <CardContent className="pt-0 pb-4 space-y-2">
                     <CardDescription className="flex items-center gap-4 text-xs">
                       <span className="flex items-center gap-1">
                         <Calendar className="h-3 w-3" />
@@ -153,6 +193,19 @@ export default function HomePage() {
                         {formatFileSize(file.size)}
                       </span>
                     </CardDescription>
+                    {file.tags?.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {file.tags.map((tag) => (
+                          <Badge
+                            key={tag}
+                            variant="outline"
+                            className="text-xs px-1.5 py-0"
+                          >
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </Link>

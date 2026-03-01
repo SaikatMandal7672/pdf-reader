@@ -4,4 +4,5 @@ export interface PdfFile {
   size: number;
   created_at: string;
   is_public: boolean;
+  tags: string[];
 }

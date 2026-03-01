@@ -60,13 +60,31 @@ export async function getFileVisibility(fileName: string): Promise<boolean> {
 }
 
 /**
- * Get visibility for all files in a single query.
- * Returns Map<file_name, is_public>.
+ * Get visibility and tags for all files in a single query.
+ * Returns Map<file_name, { is_public, tags }>.
  */
-export async function getAllFileVisibility(): Promise<Map<string, boolean>> {
+export async function getAllFileVisibility(): Promise<
+  Map<string, { is_public: boolean; tags: string[] }>
+> {
   const { data, error } = await supabase
     .from("pdf_files")
-    .select("file_name, is_public");
+    .select("file_name, is_public, tags");
   if (error || !data) return new Map();
-  return new Map(data.map((row) => [row.file_name, row.is_public]));
+  return new Map(
+    data.map((row) => [row.file_name, { is_public: row.is_public, tags: row.tags ?? [] }])
+  );
+}
+
+/**
+ * Update tags for a file.
+ */
+export async function updateFileTags(
+  fileName: string,
+  tags: string[]
+): Promise<void> {
+  const { error } = await supabase
+    .from("pdf_files")
+    .update({ tags })
+    .eq("file_name", fileName);
+  if (error) throw error;
 }
