@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import Link from "next/link";
 import { FileText, Calendar, HardDrive, Search, X, ShieldCheck, Tag } from "lucide-react";
 import {
@@ -25,6 +25,7 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [tagSearch, setTagSearch] = useState("");
 
   useEffect(() => {
     fetch("/api/files")
@@ -48,6 +49,12 @@ export default function HomePage() {
     files.forEach((f) => f.tags?.forEach((t) => set.add(t)));
     return Array.from(set).sort();
   }, [files]);
+
+  // Tags that match what the user typed in the tag search bar
+  const filteredTags = useMemo(() => {
+    if (!tagSearch.trim()) return allTags;
+    return allTags.filter((t) => t.includes(tagSearch.toLowerCase().trim()));
+  }, [allTags, tagSearch]);
 
   const filtered = useMemo(() => {
     return files.filter((f) => {
@@ -101,29 +108,59 @@ export default function HomePage() {
               )}
             </div>
 
-            {/* Tag filter */}
+            {/* Tag search bar */}
             {allTags.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2">
-                <Tag className="h-3.5 w-3.5 text-muted-foreground" />
-                {allTags.map((tag) => (
-                  <Badge
-                    key={tag}
-                    variant={activeTag === tag ? "default" : "secondary"}
-                    className="cursor-pointer transition-colors"
-                    onClick={() => setActiveTag(activeTag === tag ? null : tag)}
-                  >
-                    {tag}
-                  </Badge>
-                ))}
-                {activeTag && (
+              <div className="relative max-w-md">
+                <Tag className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search by tag..."
+                  value={activeTag ?? tagSearch}
+                  onChange={(e) => {
+                    setActiveTag(null);
+                    setTagSearch(e.target.value);
+                  }}
+                  onFocus={() => setActiveTag(null)}
+                  className="pl-9 pr-9"
+                />
+                {(activeTag || tagSearch) && (
                   <Button
                     variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-xs"
-                    onClick={() => setActiveTag(null)}
+                    size="icon"
+                    className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2"
+                    onClick={() => { setActiveTag(null); setTagSearch(""); }}
                   >
-                    Clear
+                    <X className="h-3.5 w-3.5" />
                   </Button>
+                )}
+                {/* Dropdown suggestions */}
+                {tagSearch && !activeTag && filteredTags.length > 0 && (
+                  <div className="absolute z-20 mt-1 w-full rounded-md border bg-popover shadow-md">
+                    {filteredTags.slice(0, 8).map((tag) => (
+                      <button
+                        key={tag}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent text-left"
+                        onClick={() => { setActiveTag(tag); setTagSearch(""); }}
+                      >
+                        <Tag className="h-3 w-3 text-muted-foreground" />
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {/* Active tag chip */}
+                {activeTag && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <Badge variant="default" className="gap-1">
+                      {activeTag}
+                      <X
+                        className="h-3 w-3 cursor-pointer"
+                        onClick={() => setActiveTag(null)}
+                      />
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {filtered.length} result{filtered.length !== 1 ? "s" : ""}
+                    </span>
+                  </div>
                 )}
               </div>
             )}
