@@ -8,6 +8,7 @@ import {
   ensurePdfFileRow,
   setFileVisibility,
 } from "@/lib/db";
+import { recordMetric } from "@/lib/api-metrics";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -24,6 +25,18 @@ function sanitizeFileName(raw: string): string | null {
 // GET /api/files/[id] — stream PDF to client
 // Private files require admin auth. ?meta=1 returns access info without streaming.
 export async function GET(request: NextRequest, { params }: RouteContext) {
+  const start = Date.now();
+  const isMeta = request.nextUrl.searchParams.get("meta") === "1";
+  const result = await _handleGet(request, params);
+  const route = isMeta ? "GET /api/files/:id?meta" : "GET /api/files/:id";
+  recordMetric(route, Date.now() - start, result.status).catch(() => {});
+  return result;
+}
+
+async function _handleGet(
+  request: NextRequest,
+  params: Promise<{ id: string }>
+): Promise<NextResponse> {
   const { id } = await params;
   const fileName = sanitizeFileName(id);
 

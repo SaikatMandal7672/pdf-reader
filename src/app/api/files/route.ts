@@ -4,6 +4,7 @@ import { supabase, BUCKET_NAME } from "@/lib/supabase";
 import { isAdmin } from "@/lib/auth";
 import { MAX_FILE_SIZE } from "@/lib/constants";
 import { getAllFileVisibility, ensurePdfFileRow } from "@/lib/db";
+import { recordMetric } from "@/lib/api-metrics";
 import type { PdfFile } from "@/types";
 
 // Shared fetch — hits Supabase storage + DB visibility table
@@ -48,6 +49,7 @@ const getCachedPublicFiles = unstable_cache(
 // GET /api/files — list PDFs
 // Default: public files only (cached). ?admin=true: all files, bypasses cache (requires auth).
 export async function GET(request: NextRequest) {
+  const start = Date.now();
   const adminRequested =
     request.nextUrl.searchParams.get("admin") === "true";
 
@@ -55,7 +57,7 @@ export async function GET(request: NextRequest) {
     if (!(await isAdmin())) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    // Admin always gets fresh data — no cache
+    // Admin always gets fresh data — no cache, no metrics recording
     try {
       const files = await fetchAllFiles();
       return NextResponse.json(files);
@@ -64,11 +66,13 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Public: serve from cache
+  // Public: serve from cache, record timing
   try {
     const files = await getCachedPublicFiles();
+    recordMetric("GET /api/files", Date.now() - start, 200).catch(() => {});
     return NextResponse.json(files);
   } catch (err) {
+    recordMetric("GET /api/files", Date.now() - start, 500).catch(() => {});
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }
 }

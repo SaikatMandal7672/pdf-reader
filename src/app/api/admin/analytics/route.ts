@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabase, BUCKET_NAME } from "@/lib/supabase";
 import { isAdmin } from "@/lib/auth";
 import { getAllFileVisibility } from "@/lib/db";
+import { getRouteSummaries, getHourlySeries } from "@/lib/api-metrics";
 
 const SUPABASE_FREE_STORAGE = 1 * 1024 * 1024 * 1024; // 1GB
 
@@ -63,6 +64,11 @@ export async function GET() {
     created_at: f.created_at ?? new Date().toISOString(),
   }));
 
+  const [routeSummaries, hourlySeries] = await Promise.all([
+    getRouteSummaries().catch(() => []),
+    getHourlySeries().catch(() => []),
+  ]);
+
   return NextResponse.json({
     totalFiles: pdfFiles.length,
     publicCount,
@@ -73,5 +79,6 @@ export async function GET() {
     topTags,
     largestFiles,
     recentFiles,
+    apiMetrics: { routeSummaries, hourlySeries },
   });
 }
