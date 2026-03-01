@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { r2, R2_BUCKET } from "@/lib/r2";
+import { supabase, BUCKET_NAME } from "@/lib/supabase";
 import { isAdmin } from "@/lib/auth";
 import {
   getFileVisibility,
@@ -22,8 +20,8 @@ function sanitizeFileName(raw: string): string | null {
   return decoded;
 }
 
-// GET /api/files/[id] — redirect to a short-lived R2 presigned URL
-// Private files require admin auth. ?meta=1 returns access info without redirecting.
+// GET /api/files/[id] — stream PDF to client
+// Private files require admin auth. ?meta=1 returns access info without streaming.
 export async function GET(request: NextRequest, { params }: RouteContext) {
   const { id } = await params;
   const fileName = sanitizeFileName(id);
@@ -40,20 +38,29 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     );
   }
 
-  // Lightweight access check — no redirect
+  // Lightweight access check — no file download
   if (request.nextUrl.searchParams.get("meta") === "1") {
     return NextResponse.json({ accessible: true, is_public: isPublic });
   }
 
-  // Generate a short-lived presigned GET URL and redirect the browser to it.
-  // This streams the PDF directly from R2 — no Vercel memory usage.
-  const signedUrl = await getSignedUrl(
-    r2,
-    new GetObjectCommand({ Bucket: R2_BUCKET, Key: fileName }),
-    { expiresIn: 900 } // 15 minutes
-  );
+  const { data, error } = await supabase.storage
+    .from(BUCKET_NAME)
+    .download(fileName);
 
-  return NextResponse.redirect(signedUrl, { status: 307 });
+  if (error || !data) {
+    return NextResponse.json({ error: "File not found" }, { status: 404 });
+  }
+
+  const arrayBuffer = await data.arrayBuffer();
+
+  return new NextResponse(arrayBuffer, {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": "inline",
+      "Cache-Control": "private, no-store",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
 }
 
 // PATCH /api/files/[id] — toggle visibility (admin only)
@@ -107,10 +114,12 @@ export async function DELETE(_request: NextRequest, { params }: RouteContext) {
     return NextResponse.json({ error: "Invalid file name" }, { status: 400 });
   }
 
-  try {
-    await r2.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: fileName }));
-  } catch {
-    return NextResponse.json({ error: "Failed to delete file" }, { status: 500 });
+  const { error } = await supabase.storage
+    .from(BUCKET_NAME)
+    .remove([fileName]);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   try {

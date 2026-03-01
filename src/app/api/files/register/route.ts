@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GetObjectCommand } from "@aws-sdk/client-s3";
-import { r2, R2_BUCKET } from "@/lib/r2";
+import { supabase, BUCKET_NAME } from "@/lib/supabase";
 import { isAdmin } from "@/lib/auth";
 import { ensurePdfFileRow, updateFileTags } from "@/lib/db";
 import { generateTags } from "@/lib/gemini";
@@ -26,16 +25,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to register file" }, { status: 500 });
   }
 
-  // Generate tags in the background — fetch PDF from R2, run Gemini, store tags.
-  // We respond immediately and don't block on this.
+  // Generate tags in the background — fetch PDF from Supabase, run Gemini, store tags.
   (async () => {
     try {
-      const obj = await r2.send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: path }));
-      const chunks: Uint8Array[] = [];
-      for await (const chunk of obj.Body as AsyncIterable<Uint8Array>) {
-        chunks.push(chunk);
-      }
-      const buffer = Buffer.concat(chunks);
+      const { data, error } = await supabase.storage
+        .from(BUCKET_NAME)
+        .download(path);
+
+      if (error || !data) return;
+
+      const buffer = Buffer.from(await data.arrayBuffer());
       const tags = await generateTags(buffer);
       if (tags.length > 0) {
         await updateFileTags(path, tags);
