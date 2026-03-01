@@ -31,7 +31,7 @@ async function losslessCompress(file: File): Promise<File> {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
     const compressed = await doc.save({ useObjectStreams: true, addDefaultPage: false });
-    return new File([compressed], file.name, { type: "application/pdf" });
+    return new File([compressed.buffer as ArrayBuffer], file.name, { type: "application/pdf" });
   } catch {
     return file;
   }
