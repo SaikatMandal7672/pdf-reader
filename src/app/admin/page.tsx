@@ -45,6 +45,7 @@ import { Separator } from "@/components/ui/separator";
 import { Header } from "@/components/header";
 import { formatFileSize, formatDate, getDisplayName } from "@/lib/format";
 import { MAX_FILE_SIZE } from "@/lib/constants";
+import { getDisplayName } from "@/lib/format";
 import { toast } from "sonner";
 import type { PdfFile } from "@/types";
 
@@ -102,6 +103,18 @@ export default function AdminDashboard() {
 
     if (file.size > MAX_FILE_SIZE) {
       toast.error(`File size exceeds ${MAX_FILE_SIZE / (1024 * 1024)}MB limit`);
+      return;
+    }
+
+    // Check for duplicate — compare sanitized display names case-insensitively
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const newDisplayName = getDisplayName(safeName).toLowerCase();
+    const duplicate = files.find(
+      (f) => getDisplayName(f.name).toLowerCase() === newDisplayName
+    );
+    if (duplicate) {
+      toast.error(`"${getDisplayName(duplicate.name)}" is already uploaded`);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
 
