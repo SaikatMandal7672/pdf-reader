@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Upload,
   Trash2,
@@ -9,6 +10,8 @@ import {
   Calendar,
   HardDrive,
   LogOut,
+  BarChart2,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +55,7 @@ export default function AdminDashboard() {
   const [files, setFiles] = useState<PdfFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [taggingFile, setTaggingFile] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -238,6 +242,28 @@ export default function AdminDashboard() {
     }
   }
 
+  async function handleGenerateTags(fileName: string) {
+    setTaggingFile(fileName);
+    try {
+      const res = await fetch("/api/admin/generate-tags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName }),
+      });
+      const data = await res.json();
+      if (res.ok && data.tags?.length > 0) {
+        toast.success(`Tags generated: ${data.tags.join(", ")}`);
+        fetchFiles();
+      } else {
+        toast.warning("No tags could be generated for this file");
+      }
+    } catch {
+      toast.error("Failed to generate tags");
+    } finally {
+      setTaggingFile(null);
+    }
+  }
+
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/admin/login");
@@ -265,10 +291,18 @@ export default function AdminDashboard() {
               Manage your PDF documents
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={handleLogout}>
-            <LogOut className="mr-2 h-4 w-4" />
-            Logout
-          </Button>
+          <div className="flex items-center gap-2">
+            <Link href="/admin/analytics">
+              <Button variant="outline" size="sm">
+                <BarChart2 className="mr-2 h-4 w-4" />
+                Analytics
+              </Button>
+            </Link>
+            <Button variant="outline" size="sm" onClick={handleLogout}>
+              <LogOut className="mr-2 h-4 w-4" />
+              Logout
+            </Button>
+          </div>
         </div>
 
         <Separator className="mb-8" />
@@ -336,8 +370,9 @@ export default function AdminDashboard() {
                       <TableHead>Name</TableHead>
                       <TableHead>Size</TableHead>
                       <TableHead>Uploaded</TableHead>
+                      <TableHead>Tags</TableHead>
                       <TableHead>Visibility</TableHead>
-                      <TableHead className="w-[80px]">Actions</TableHead>
+                      <TableHead className="w-[100px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -360,6 +395,19 @@ export default function AdminDashboard() {
                             {formatDate(file.created_at, true)}
                           </span>
                         </TableCell>
+                        <TableCell className="max-w-[200px]">
+                          <div className="flex flex-wrap gap-1">
+                            {file.tags?.length > 0 ? (
+                              file.tags.map((tag) => (
+                                <Badge key={tag} variant="outline" className="text-xs px-1.5 py-0">
+                                  {tag}
+                                </Badge>
+                              ))
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <Switch
@@ -381,6 +429,16 @@ export default function AdminDashboard() {
                           </div>
                         </TableCell>
                         <TableCell>
+                          <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Generate tags with AI"
+                            disabled={taggingFile === file.name}
+                            onClick={() => handleGenerateTags(file.name)}
+                          >
+                            <Sparkles className={`h-4 w-4 ${taggingFile === file.name ? "animate-pulse text-primary" : "text-muted-foreground"}`} />
+                          </Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button variant="ghost" size="icon">
@@ -409,6 +467,7 @@ export default function AdminDashboard() {
                               </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
