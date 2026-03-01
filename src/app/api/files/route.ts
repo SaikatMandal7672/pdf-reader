@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase, BUCKET_NAME } from "@/lib/supabase";
+import { ListObjectsV2Command, PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { r2, R2_BUCKET } from "@/lib/r2";
 import { isAdmin } from "@/lib/auth";
 import { MAX_FILE_SIZE } from "@/lib/constants";
 import { getAllFileVisibility, ensurePdfFileRow } from "@/lib/db";
@@ -15,35 +17,39 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { data, error } = await supabase.storage.from(BUCKET_NAME).list("", {
-    sortBy: { column: "created_at", order: "desc" },
-  });
+  const response = await r2.send(
+    new ListObjectsV2Command({ Bucket: R2_BUCKET })
+  );
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  const objects = (response.Contents ?? []).filter((obj) =>
+    obj.Key?.endsWith(".pdf")
+  );
 
-  const pdfFiles = (data ?? []).filter((f) => f.name.endsWith(".pdf"));
   const visibilityMap = await getAllFileVisibility();
 
   const files: PdfFile[] = [];
-  for (const f of pdfFiles) {
-    let isPublic = visibilityMap.get(f.name);
+  for (const obj of objects) {
+    const name = obj.Key!;
+    let isPublic = visibilityMap.get(name);
 
     if (isPublic === undefined) {
-      // Backwards compat: file in storage but not in DB — treat as public
       isPublic = true;
-      ensurePdfFileRow(f.name, true).catch(() => {});
+      ensurePdfFileRow(name, true).catch(() => {});
     }
 
     files.push({
-      id: f.id ?? f.name,
-      name: f.name,
-      size: f.metadata?.size ?? 0,
-      created_at: f.created_at ?? new Date().toISOString(),
+      id: name,
+      name,
+      size: obj.Size ?? 0,
+      created_at: obj.LastModified?.toISOString() ?? new Date().toISOString(),
       is_public: isPublic,
     });
   }
+
+  // Sort newest first
+  files.sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
 
   if (!adminRequested) {
     return NextResponse.json(files.filter((f) => f.is_public));
@@ -52,8 +58,8 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(files);
 }
 
-// POST /api/files — generate a signed upload URL (admin only)
-// The client uploads the file directly to Supabase to avoid Vercel's 4.5MB body limit.
+// POST /api/files — generate a presigned upload URL (admin only)
+// The client uploads the file directly to R2 to avoid Vercel's 4.5MB body limit.
 // After uploading, the client must call POST /api/files/register to record the file in the DB.
 export async function POST(request: NextRequest) {
   if (!(await isAdmin())) {
@@ -85,16 +91,15 @@ export async function POST(request: NextRequest) {
   const safeName = baseName.replace(/[^a-zA-Z0-9._-]/g, "_");
   const storagePath = `${Date.now()}-${safeName}`;
 
-  const { data, error } = await supabase.storage
-    .from(BUCKET_NAME)
-    .createSignedUploadUrl(storagePath);
+  const signedUrl = await getSignedUrl(
+    r2,
+    new PutObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: storagePath,
+      ContentType: "application/pdf",
+    }),
+    { expiresIn: 3600 }
+  );
 
-  if (error || !data) {
-    return NextResponse.json(
-      { error: error?.message ?? "Failed to create upload URL" },
-      { status: 500 }
-    );
-  }
-
-  return NextResponse.json({ signedUrl: data.signedUrl, path: storagePath });
+  return NextResponse.json({ signedUrl, path: storagePath });
 }
