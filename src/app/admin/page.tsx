@@ -56,6 +56,8 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [taggingFile, setTaggingFile] = useState<string | null>(null);
+  const [bulkTagging, setBulkTagging] = useState(false);
+  const [bulkTagProgress, setBulkTagProgress] = useState<{ current: number; total: number } | null>(null);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -264,6 +266,43 @@ export default function AdminDashboard() {
     }
   }
 
+  async function handleTagAll() {
+    const untagged = files.filter((f) => !f.tags || f.tags.length === 0);
+    if (untagged.length === 0) {
+      toast.info("All files already have tags");
+      return;
+    }
+
+    setBulkTagging(true);
+    let succeeded = 0;
+    let failed = 0;
+
+    for (let i = 0; i < untagged.length; i++) {
+      setBulkTagProgress({ current: i + 1, total: untagged.length });
+      try {
+        const res = await fetch("/api/admin/generate-tags", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileName: untagged[i].name }),
+        });
+        if (res.ok) succeeded++;
+        else failed++;
+      } catch {
+        failed++;
+      }
+    }
+
+    setBulkTagging(false);
+    setBulkTagProgress(null);
+    fetchFiles();
+
+    if (failed === 0) {
+      toast.success(`Tags generated for ${succeeded} file${succeeded !== 1 ? "s" : ""}`);
+    } else {
+      toast.warning(`${succeeded} tagged, ${failed} failed`);
+    }
+  }
+
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/admin/login");
@@ -350,7 +389,20 @@ export default function AdminDashboard() {
                 <FileText className="h-5 w-5" />
                 Uploaded Files
               </span>
-              <Badge variant="secondary">{files.length} files</Badge>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleTagAll}
+                  disabled={bulkTagging || loading}
+                >
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  {bulkTagging && bulkTagProgress
+                    ? `Tagging ${bulkTagProgress.current} / ${bulkTagProgress.total}...`
+                    : "Tag All Untagged"}
+                </Button>
+                <Badge variant="secondary">{files.length} files</Badge>
+              </div>
             </CardTitle>
           </CardHeader>
           <CardContent>
