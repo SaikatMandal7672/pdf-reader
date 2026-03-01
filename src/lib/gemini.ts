@@ -5,7 +5,8 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 export async function generateTags(pdfBuffer: Buffer): Promise<string[]> {
   try {
     // Extract text from PDF using pdf-parse
-    const pdfParse = await import("pdf-parse").then((m) => m.default ?? m);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pdfParse = await import("pdf-parse").then((m) => (m as any).default ?? m);
     const data = await pdfParse(pdfBuffer, { max: 3 }); // first 3 pages only
     const text = data.text.slice(0, 3000).trim();
 
