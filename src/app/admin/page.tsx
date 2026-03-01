@@ -45,7 +45,6 @@ import { Separator } from "@/components/ui/separator";
 import { Header } from "@/components/header";
 import { formatFileSize, formatDate, getDisplayName } from "@/lib/format";
 import { MAX_FILE_SIZE } from "@/lib/constants";
-import { getDisplayName } from "@/lib/format";
 import { toast } from "sonner";
 import type { PdfFile } from "@/types";
 
