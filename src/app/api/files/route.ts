@@ -1,27 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unstable_cache } from "next/cache";
 import { supabase, BUCKET_NAME } from "@/lib/supabase";
 import { isAdmin } from "@/lib/auth";
 import { MAX_FILE_SIZE } from "@/lib/constants";
 import { getAllFileVisibility, ensurePdfFileRow } from "@/lib/db";
 import type { PdfFile } from "@/types";
 
-// GET /api/files — list PDFs
-// Default: public files only. ?admin=true: all files (requires auth).
-export async function GET(request: NextRequest) {
-  const adminRequested =
-    request.nextUrl.searchParams.get("admin") === "true";
-
-  if (adminRequested && !(await isAdmin())) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+// Shared fetch — hits Supabase storage + DB visibility table
+async function fetchAllFiles(): Promise<PdfFile[]> {
   const { data, error } = await supabase.storage.from(BUCKET_NAME).list("", {
     sortBy: { column: "created_at", order: "desc" },
   });
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  if (error) throw new Error(error.message);
 
   const pdfFiles = (data ?? []).filter((f) => f.name.endsWith(".pdf"));
   const visibilityMap = await getAllFileVisibility();
@@ -29,11 +20,9 @@ export async function GET(request: NextRequest) {
   const files: PdfFile[] = [];
   for (const f of pdfFiles) {
     const meta = visibilityMap.get(f.name);
-
     if (meta === undefined) {
       ensurePdfFileRow(f.name, true).catch(() => {});
     }
-
     files.push({
       id: f.id ?? f.name,
       name: f.name,
@@ -44,11 +33,44 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  if (!adminRequested) {
-    return NextResponse.json(files.filter((f) => f.is_public));
+  return files;
+}
+
+// Cached version — only for public files
+// revalidate: 300 = auto-expire after 5 min as a safety net
+// tags: ["files-list"] = allows instant invalidation via revalidateTag()
+const getCachedPublicFiles = unstable_cache(
+  async () => (await fetchAllFiles()).filter((f) => f.is_public),
+  ["public-files-list"],
+  { revalidate: 300, tags: ["files-list"] }
+);
+
+// GET /api/files — list PDFs
+// Default: public files only (cached). ?admin=true: all files, bypasses cache (requires auth).
+export async function GET(request: NextRequest) {
+  const adminRequested =
+    request.nextUrl.searchParams.get("admin") === "true";
+
+  if (adminRequested) {
+    if (!(await isAdmin())) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    // Admin always gets fresh data — no cache
+    try {
+      const files = await fetchAllFiles();
+      return NextResponse.json(files);
+    } catch (err) {
+      return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    }
   }
 
-  return NextResponse.json(files);
+  // Public: serve from cache
+  try {
+    const files = await getCachedPublicFiles();
+    return NextResponse.json(files);
+  } catch (err) {
+    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+  }
 }
 
 // POST /api/files — generate a presigned upload URL (admin only)

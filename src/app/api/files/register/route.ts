@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { supabase, BUCKET_NAME } from "@/lib/supabase";
 import { isAdmin } from "@/lib/auth";
 import { ensurePdfFileRow, updateFileTags } from "@/lib/db";
@@ -20,6 +21,7 @@ export async function POST(request: NextRequest) {
 
   try {
     await ensurePdfFileRow(path, true);
+    revalidateTag("files-list", "default");
   } catch (err) {
     console.error("Failed to register file in DB:", err);
     return NextResponse.json({ error: "Failed to register file" }, { status: 500 });

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { supabase, BUCKET_NAME } from "@/lib/supabase";
 import { isAdmin } from "@/lib/auth";
 import {
@@ -92,6 +93,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   try {
     await ensurePdfFileRow(fileName, true);
     const isPublic = await setFileVisibility(fileName, body.is_public);
+    revalidateTag("files-list", "default");
     return NextResponse.json({ success: true, is_public: isPublic });
   } catch {
     return NextResponse.json(
@@ -128,5 +130,6 @@ export async function DELETE(_request: NextRequest, { params }: RouteContext) {
     console.error("Failed to delete pdf_files row:", dbError);
   }
 
+  revalidateTag("files-list", "default");
   return NextResponse.json({ success: true });
 }
