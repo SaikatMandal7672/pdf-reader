@@ -52,6 +52,7 @@ export default function AdminDashboard() {
   const [files, setFiles] = useState<PdfFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [checking, setChecking] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -91,83 +92,103 @@ export default function AdminDashboard() {
     }
   }
 
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.name.endsWith(".pdf")) {
-      toast.error("Only PDF files are allowed");
-      return;
-    }
-
-    if (file.size > MAX_FILE_SIZE) {
-      toast.error(`File size exceeds ${MAX_FILE_SIZE / (1024 * 1024)}MB limit`);
-      return;
-    }
-
-    // Check for duplicate — compare sanitized display names case-insensitively
+  async function uploadSingleFile(
+    file: File,
+    existingNames: Set<string>
+  ): Promise<"ok" | "duplicate" | "error"> {
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const newDisplayName = getDisplayName(safeName).toLowerCase();
-    const duplicate = files.find(
-      (f) => getDisplayName(f.name).toLowerCase() === newDisplayName
-    );
-    if (duplicate) {
-      toast.error(`"${getDisplayName(duplicate.name)}" is already uploaded`);
+    const displayName = getDisplayName(safeName).toLowerCase();
+
+    if (existingNames.has(displayName)) return "duplicate";
+
+    try {
+      const urlRes = await fetch("/api/files", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: file.name, fileSize: file.size }),
+      });
+      if (!urlRes.ok) return "error";
+
+      const { signedUrl, path } = await urlRes.json();
+
+      const uploadRes = await fetch(signedUrl, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": "application/pdf" },
+      });
+      if (!uploadRes.ok) return "error";
+
+      const registerRes = await fetch("/api/files/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      });
+      if (!registerRes.ok) return "error";
+
+      existingNames.add(displayName);
+      return "ok";
+    } catch {
+      return "error";
+    }
+  }
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(e.target.files ?? []);
+    if (selected.length === 0) return;
+
+    const pdfs = selected.filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+    const nonPdfs = selected.length - pdfs.length;
+
+    if (pdfs.length === 0) {
+      toast.error("Only PDF files are allowed");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    const tooBig = pdfs.filter((f) => f.size > MAX_FILE_SIZE);
+    if (tooBig.length > 0) {
+      toast.error(
+        `${tooBig.map((f) => getDisplayName(f.name)).join(", ")} exceed${tooBig.length === 1 ? "s" : ""} the ${MAX_FILE_SIZE / (1024 * 1024)}MB limit`
+      );
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
 
     setUploading(true);
 
-    try {
-      // Step 1: Get a signed upload URL from our API (tiny request, no file body)
-      const urlRes = await fetch("/api/files", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileName: file.name, fileSize: file.size }),
-      });
+    // Build a set of existing display names to detect duplicates across the batch too
+    const existingNames = new Set(
+      files.map((f) => getDisplayName(f.name).toLowerCase())
+    );
 
-      if (!urlRes.ok) {
-        const data = await urlRes.json();
-        toast.error(data.error || "Failed to initiate upload");
-        return;
-      }
+    let succeeded = 0;
+    let duplicates = 0;
+    let errors = 0;
 
-      const { signedUrl, path } = await urlRes.json();
+    for (let i = 0; i < pdfs.length; i++) {
+      setUploadProgress({ current: i + 1, total: pdfs.length });
+      const result = await uploadSingleFile(pdfs[i], existingNames);
+      if (result === "ok") succeeded++;
+      else if (result === "duplicate") duplicates++;
+      else errors++;
+    }
 
-      // Step 2: Upload the file directly to Supabase Storage (bypasses Vercel's 4.5MB limit)
-      const uploadRes = await fetch(signedUrl, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": "application/pdf" },
-      });
+    setUploading(false);
+    setUploadProgress(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
 
-      if (!uploadRes.ok) {
-        toast.error("Upload failed");
-        return;
-      }
+    if (succeeded > 0) fetchFiles();
 
-      // Step 3: Register the uploaded file in the database
-      const registerRes = await fetch("/api/files/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path }),
-      });
+    const parts: string[] = [];
+    if (succeeded > 0) parts.push(`${succeeded} uploaded`);
+    if (duplicates > 0) parts.push(`${duplicates} skipped (duplicate)`);
+    if (errors > 0) parts.push(`${errors} failed`);
+    if (nonPdfs > 0) parts.push(`${nonPdfs} skipped (not PDF)`);
 
-      if (registerRes.ok) {
-        toast.success("PDF uploaded successfully");
-        fetchFiles();
-      } else {
-        const data = await registerRes.json();
-        toast.error(data.error || "Upload failed");
-      }
-    } catch {
-      toast.error("Upload failed");
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+    if (errors > 0 || duplicates > 0 || nonPdfs > 0) {
+      toast[succeeded > 0 ? "warning" : "error"](parts.join(", "));
+    } else {
+      toast.success(succeeded === 1 ? "PDF uploaded successfully" : `${succeeded} PDFs uploaded`);
     }
   }
 
@@ -272,15 +293,16 @@ export default function AdminDashboard() {
                   ref={fileInputRef}
                   type="file"
                   accept=".pdf"
+                  multiple
                   onChange={handleUpload}
                   disabled={uploading}
                   className="cursor-pointer"
                 />
               </div>
             </div>
-            {uploading && (
+            {uploading && uploadProgress && (
               <p className="mt-3 text-sm text-muted-foreground animate-pulse">
-                Uploading...
+                Uploading {uploadProgress.current} / {uploadProgress.total}...
               </p>
             )}
           </CardContent>
