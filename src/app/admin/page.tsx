@@ -11,6 +11,7 @@ import {
   HardDrive,
   LogOut,
   BarChart2,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,6 +58,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; status?: string } | null>(null);
+  const [taggingFile, setTaggingFile] = useState<string | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [checking, setChecking] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -249,6 +251,28 @@ export default function AdminDashboard() {
     }
   }
 
+  async function handleGenerateTags(fileName: string) {
+    setTaggingFile(fileName);
+    try {
+      const res = await fetch("/api/admin/generate-tags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName }),
+      });
+      const data = await res.json();
+      if (res.ok && data.tags?.length > 0) {
+        toast.success(`Tags generated: ${data.tags.join(", ")}`);
+        fetchFiles();
+      } else {
+        toast.warning("No tags could be generated for this file");
+      }
+    } catch {
+      toast.error("Failed to generate tags");
+    } finally {
+      setTaggingFile(null);
+    }
+  }
+
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/admin/login");
@@ -355,7 +379,7 @@ export default function AdminDashboard() {
                       <TableHead>Uploaded</TableHead>
                       <TableHead>Tags</TableHead>
                       <TableHead>Visibility</TableHead>
-                      <TableHead className="w-[60px]">Actions</TableHead>
+                      <TableHead className="w-[90px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -403,6 +427,16 @@ export default function AdminDashboard() {
                           </div>
                         </TableCell>
                         <TableCell>
+                          <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Generate tags with AI"
+                            disabled={taggingFile === file.name}
+                            onClick={() => handleGenerateTags(file.name)}
+                          >
+                            <Sparkles className={`h-4 w-4 ${taggingFile === file.name ? "animate-pulse text-primary" : "text-muted-foreground"}`} />
+                          </Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button variant="ghost" size="icon">
@@ -429,6 +463,7 @@ export default function AdminDashboard() {
                               </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
