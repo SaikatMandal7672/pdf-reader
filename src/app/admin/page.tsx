@@ -291,6 +291,8 @@ export default function AdminDashboard() {
 
   const COMPRESS_THRESHOLD = 15 * 1024 * 1024;
 
+  // Server-side lossless compression — runs on Vercel, not in the browser.
+  // Safe to switch apps while this runs.
   async function handleCompressAll() {
     const largeFiles = files.filter((f) => f.size > COMPRESS_THRESHOLD);
     if (largeFiles.length === 0) return;
@@ -299,47 +301,26 @@ export default function AdminDashboard() {
 
     for (let i = 0; i < largeFiles.length; i++) {
       const file = largeFiles[i];
-      setCompressProgress({ current: i + 1, total: largeFiles.length, status: "Downloading..." });
+      setCompressProgress({ current: i + 1, total: largeFiles.length, status: "Compressing on server..." });
 
       try {
-        // Download from Supabase via our API
-        const res = await fetch(`/api/files/${encodeURIComponent(file.name)}`);
-        if (!res.ok) throw new Error("Download failed");
-        const blob = await res.blob();
-        const fileObj = new File([blob], file.name, { type: "application/pdf" });
-
-        // Compress in browser
-        const { maybeCompressPdf } = await import("@/lib/compress-pdf");
-        const compressed = await maybeCompressPdf(fileObj, (msg) =>
-          setCompressProgress({ current: i + 1, total: largeFiles.length, status: msg })
-        );
-
-        if (compressed.size >= fileObj.size) {
-          // No meaningful compression achieved — skip re-upload
-          continue;
-        }
-
-        setCompressProgress({ current: i + 1, total: largeFiles.length, status: "Uploading..." });
-
-        // Get signed upload URL for same path (overwrites existing file)
-        const urlRes = await fetch("/api/files", {
+        const res = await fetch("/api/admin/compress", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fileName: file.name, fileSize: compressed.size }),
+          body: JSON.stringify({ fileName: file.name }),
         });
-        if (!urlRes.ok) throw new Error("Failed to get upload URL");
-        const { signedUrl } = await urlRes.json();
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Compression failed");
 
-        // Upload compressed file directly — skip register (DB row already exists)
-        await fetch(signedUrl, {
-          method: "PUT",
-          body: compressed,
-          headers: { "Content-Type": "application/pdf" },
-        });
-
-        toast.success(`Compressed ${getDisplayName(file.name)} — ${(compressed.size / 1024 / 1024).toFixed(1)}MB`);
-      } catch {
-        toast.error(`Failed to compress ${getDisplayName(file.name)}`);
+        if (data.reduced) {
+          toast.success(
+            `Compressed ${getDisplayName(file.name)}: ${(data.originalSize / 1024 / 1024).toFixed(1)}MB → ${(data.compressedSize / 1024 / 1024).toFixed(1)}MB (−${data.savedPercent}%)`
+          );
+        } else {
+          toast.info(`${getDisplayName(file.name)}: already optimal, no reduction achieved`);
+        }
+      } catch (err) {
+        toast.error(`Failed to compress ${getDisplayName(file.name)}: ${(err as Error).message}`);
       }
     }
 
