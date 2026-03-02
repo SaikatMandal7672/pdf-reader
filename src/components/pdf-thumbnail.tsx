@@ -6,14 +6,52 @@ import { THUMBNAIL_WIDTH } from "@/lib/constants";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 
 interface PdfThumbnailProps {
-  fileUrl: string;
+  fileName: string; // storage path — used to build thumbnail URL
+  fileUrl: string;  // full PDF URL — used as fallback for old files
 }
 
-export function PdfThumbnail({ fileUrl }: PdfThumbnailProps) {
+// Fast path: serve pre-generated JPEG from Supabase via /api/thumbnails/[id]
+// Fallback: render page 1 via PDF.js for files uploaded before this feature
+export function PdfThumbnail({ fileName, fileUrl }: PdfThumbnailProps) {
+  const [state, setState] = useState<"img" | "canvas" | "error">("img");
+  const thumbnailUrl = `/api/thumbnails/${encodeURIComponent(fileName)}`;
+
+  if (state === "img") {
+    return (
+      <div className="relative overflow-hidden rounded-md bg-muted/50" style={{ minHeight: 160 }}>
+        <img
+          src={thumbnailUrl}
+          alt=""
+          className="w-full object-cover"
+          onError={() => setState("canvas")}
+        />
+      </div>
+    );
+  }
+
+  if (state === "error") {
+    return (
+      <div className="flex items-center justify-center overflow-hidden rounded-md bg-muted/50" style={{ minHeight: 160 }}>
+        <FileText className="h-10 w-10 text-muted-foreground/40" />
+      </div>
+    );
+  }
+
+  // Fallback: PDF.js canvas rendering (for PDFs uploaded before thumbnail feature)
+  return <PdfThumbnailCanvas fileUrl={fileUrl} onError={() => setState("error")} />;
+}
+
+// Existing PDF.js rendering — kept as fallback for old uploads
+function PdfThumbnailCanvas({
+  fileUrl,
+  onError,
+}: {
+  fileUrl: string;
+  onError: () => void;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState(false);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -40,22 +78,13 @@ export function PdfThumbnail({ fileUrl }: PdfThumbnailProps) {
         pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
         doc = await pdfjsLib.getDocument(fileUrl).promise;
-        if (cancelled) {
-          doc.destroy();
-          return;
-        }
+        if (cancelled) { doc.destroy(); return; }
 
         const page = await doc.getPage(1);
-        if (cancelled) {
-          doc.destroy();
-          return;
-        }
+        if (cancelled) { doc.destroy(); return; }
 
         const canvas = canvasRef.current;
-        if (!canvas) {
-          doc.destroy();
-          return;
-        }
+        if (!canvas) { doc.destroy(); return; }
 
         const baseViewport = page.getViewport({ scale: 1 });
         const scale = THUMBNAIL_WIDTH / baseViewport.width;
@@ -68,27 +97,16 @@ export function PdfThumbnail({ fileUrl }: PdfThumbnailProps) {
         canvas.style.height = `${viewport.height}px`;
 
         const context = canvas.getContext("2d");
-        if (!context) {
-          doc.destroy();
-          return;
-        }
+        if (!context) { doc.destroy(); return; }
         context.scale(dpr, dpr);
 
-        await page.render({
-          canvasContext: context,
-          canvas,
-          viewport,
-        }).promise;
-
+        await page.render({ canvasContext: context, canvas, viewport }).promise;
         if (!cancelled) setLoaded(true);
         doc.destroy();
         doc = null;
       } catch {
-        if (!cancelled) setError(true);
-        if (doc) {
-          doc.destroy();
-          doc = null;
-        }
+        if (!cancelled) onError();
+        if (doc) { doc.destroy(); doc = null; }
       }
     }
 
@@ -97,7 +115,7 @@ export function PdfThumbnail({ fileUrl }: PdfThumbnailProps) {
       observer.disconnect();
       if (doc) doc.destroy();
     };
-  }, [fileUrl]);
+  }, [fileUrl, onError]);
 
   return (
     <div
@@ -105,21 +123,15 @@ export function PdfThumbnail({ fileUrl }: PdfThumbnailProps) {
       className="relative flex items-center justify-center overflow-hidden rounded-md bg-muted/50"
       style={{ minHeight: 160 }}
     >
-      {error ? (
-        <FileText className="h-10 w-10 text-muted-foreground/40" />
-      ) : (
-        <>
-          {!loaded && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/20 border-t-muted-foreground/60" />
-            </div>
-          )}
-          <canvas
-            ref={canvasRef}
-            className={`transition-opacity duration-300 ${loaded ? "opacity-100" : "opacity-0"}`}
-          />
-        </>
+      {!loaded && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/20 border-t-muted-foreground/60" />
+        </div>
       )}
+      <canvas
+        ref={canvasRef}
+        className={`transition-opacity duration-300 ${loaded ? "opacity-100" : "opacity-0"}`}
+      />
     </div>
   );
 }

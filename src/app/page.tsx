@@ -208,6 +208,7 @@ export default function HomePage() {
                 <Card className="group cursor-pointer overflow-hidden transition-all hover:shadow-md hover:bg-accent/30">
                   <div className="relative border-b">
                     <PdfThumbnail
+                      fileName={file.name}
                       fileUrl={`/api/files/${encodeURIComponent(file.name)}`}
                     />
                   </div>

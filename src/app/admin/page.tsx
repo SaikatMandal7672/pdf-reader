@@ -50,6 +50,7 @@ import { Header } from "@/components/header";
 import { formatFileSize, formatDate, getDisplayName } from "@/lib/format";
 import { MAX_FILE_SIZE } from "@/lib/constants";
 import { maybeCompressPdf, COMPRESS_THRESHOLD_MB } from "@/lib/compress-pdf";
+import { generateThumbnailBlob } from "@/lib/generate-thumbnail";
 import { toast } from "sonner";
 import type { PdfFile } from "@/types";
 
@@ -139,6 +140,16 @@ export default function AdminDashboard() {
         body: JSON.stringify({ path }),
       });
       if (!registerRes.ok) return "error";
+
+      // Generate thumbnail from the PDF already in memory and upload in background
+      generateThumbnailBlob(file).then(async (blob) => {
+        if (!blob) return;
+        await fetch(`/api/thumbnails/${encodeURIComponent(path)}`, {
+          method: "POST",
+          body: blob,
+          headers: { "Content-Type": "image/jpeg" },
+        });
+      }).catch(() => {});
 
       existingNames.add(displayName);
       return "ok";
