@@ -18,7 +18,7 @@ export function PdfThumbnail({ fileName, fileUrl }: PdfThumbnailProps) {
 
   if (state === "img") {
     return (
-      <div className="relative overflow-hidden rounded-md bg-muted/50" style={{ minHeight: 160 }}>
+      <div className="relative overflow-hidden bg-muted/50" style={{ minHeight: 160 }}>
         <img
           src={thumbnailUrl}
           alt=""
@@ -31,7 +31,7 @@ export function PdfThumbnail({ fileName, fileUrl }: PdfThumbnailProps) {
 
   if (state === "error") {
     return (
-      <div className="flex items-center justify-center overflow-hidden rounded-md bg-muted/50" style={{ minHeight: 160 }}>
+      <div className="flex items-center justify-center overflow-hidden bg-muted/50" style={{ minHeight: 160 }}>
         <FileText className="h-10 w-10 text-muted-foreground/40" />
       </div>
     );
@@ -120,7 +120,7 @@ function PdfThumbnailCanvas({
   return (
     <div
       ref={containerRef}
-      className="relative flex items-center justify-center overflow-hidden rounded-md bg-muted/50"
+      className="relative flex items-center justify-center overflow-hidden bg-muted/50"
       style={{ minHeight: 160 }}
     >
       {!loaded && (

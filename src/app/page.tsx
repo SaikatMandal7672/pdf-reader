@@ -205,7 +205,7 @@ export default function HomePage() {
                 key={file.id}
                 href={`/viewer/${encodeURIComponent(file.name)}`}
               >
-                <Card className="group cursor-pointer overflow-hidden transition-all hover:shadow-md hover:bg-accent/30">
+                <Card className="group cursor-pointer overflow-hidden transition-all hover:shadow-md hover:bg-white/60 p-0">
                   <div className="relative border-b">
                     <PdfThumbnail
                       fileName={file.name}

@@ -52,7 +52,7 @@
   --radius: 0.625rem;
   --background: oklch(0.860 0.006 264);      /* #d5d6db — warm grayish-blue */
   --foreground: oklch(0.281 0.056 264);      /* #343b58 — deep navy */
-  --card: oklch(0.893 0.007 264);            /* slightly lighter surface */
+  --card: oklch(1 0 0);                      /* white cards */
   --card-foreground: oklch(0.281 0.056 264);
   --popover: oklch(0.893 0.007 264);
   --popover-foreground: oklch(0.281 0.056 264);
