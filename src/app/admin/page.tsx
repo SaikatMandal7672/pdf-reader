@@ -11,9 +11,6 @@ import {
   HardDrive,
   LogOut,
   BarChart2,
-  Sparkles,
-  Minimize2,
-  Image,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,13 +56,6 @@ export default function AdminDashboard() {
   const [files, setFiles] = useState<PdfFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [taggingFile, setTaggingFile] = useState<string | null>(null);
-  const [bulkTagging, setBulkTagging] = useState(false);
-  const [bulkTagProgress, setBulkTagProgress] = useState<{ current: number; total: number } | null>(null);
-  const [generatingThumbs, setGeneratingThumbs] = useState(false);
-  const [thumbProgress, setThumbProgress] = useState<{ current: number; total: number } | null>(null);
-  const [compressing, setCompressing] = useState(false);
-  const [compressProgress, setCompressProgress] = useState<{ current: number; total: number; status?: string } | null>(null);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; status?: string } | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -116,7 +106,7 @@ export default function AdminDashboard() {
     if (existingNames.has(displayName)) return "duplicate";
 
     try {
-      // Compress if over threshold
+      // Auto-compress if over threshold before uploading
       file = await maybeCompressPdf(file, (msg) => {
         setUploadProgress((p) => p ? { ...p, status: msg } : null);
       });
@@ -144,7 +134,7 @@ export default function AdminDashboard() {
       });
       if (!registerRes.ok) return "error";
 
-      // Generate thumbnail from the PDF already in memory and upload in background
+      // Auto-generate thumbnail in background
       generateThumbnailBlob(file).then(async (blob) => {
         if (!blob) return;
         await fetch(`/api/thumbnails/${encodeURIComponent(path)}`, {
@@ -185,7 +175,6 @@ export default function AdminDashboard() {
 
     setUploading(true);
 
-    // Build a set of existing display names to detect duplicates across the batch too
     const existingNames = new Set(
       files.map((f) => getDisplayName(f.name).toLowerCase())
     );
@@ -221,10 +210,7 @@ export default function AdminDashboard() {
     }
   }
 
-  async function handleToggleVisibility(
-    fileName: string,
-    currentlyPublic: boolean
-  ) {
+  async function handleToggleVisibility(fileName: string, currentlyPublic: boolean) {
     try {
       const res = await fetch(`/api/files/${encodeURIComponent(fileName)}`, {
         method: "PATCH",
@@ -235,13 +221,9 @@ export default function AdminDashboard() {
       if (res.ok) {
         const data = await res.json();
         setFiles((prev) =>
-          prev.map((f) =>
-            f.name === fileName ? { ...f, is_public: data.is_public } : f
-          )
+          prev.map((f) => f.name === fileName ? { ...f, is_public: data.is_public } : f)
         );
-        toast.success(
-          data.is_public ? "Document is now public" : "Document is now private"
-        );
+        toast.success(data.is_public ? "Document is now public" : "Document is now private");
       } else {
         toast.error("Failed to update visibility");
       }
@@ -267,163 +249,6 @@ export default function AdminDashboard() {
     }
   }
 
-  async function handleGenerateTags(fileName: string) {
-    setTaggingFile(fileName);
-    try {
-      const res = await fetch("/api/admin/generate-tags", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileName }),
-      });
-      const data = await res.json();
-      if (res.ok && data.tags?.length > 0) {
-        toast.success(`Tags generated: ${data.tags.join(", ")}`);
-        fetchFiles();
-      } else {
-        toast.warning("No tags could be generated for this file");
-      }
-    } catch {
-      toast.error("Failed to generate tags");
-    } finally {
-      setTaggingFile(null);
-    }
-  }
-
-  const COMPRESS_THRESHOLD = 15 * 1024 * 1024;
-
-  // Server-side lossless compression — runs on Vercel, not in the browser.
-  // Safe to switch apps while this runs.
-  async function handleCompressAll() {
-    const largeFiles = files.filter((f) => f.size > COMPRESS_THRESHOLD);
-    if (largeFiles.length === 0) return;
-
-    setCompressing(true);
-
-    for (let i = 0; i < largeFiles.length; i++) {
-      const file = largeFiles[i];
-      setCompressProgress({ current: i + 1, total: largeFiles.length, status: "Compressing on server..." });
-
-      try {
-        const res = await fetch("/api/admin/compress", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fileName: file.name }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Compression failed");
-
-        if (data.reduced) {
-          toast.success(
-            `Compressed ${getDisplayName(file.name)}: ${(data.originalSize / 1024 / 1024).toFixed(1)}MB → ${(data.compressedSize / 1024 / 1024).toFixed(1)}MB (−${data.savedPercent}%)`
-          );
-        } else {
-          toast.info(`${getDisplayName(file.name)}: already optimal, no reduction achieved`);
-        }
-      } catch (err) {
-        toast.error(`Failed to compress ${getDisplayName(file.name)}: ${(err as Error).message}`);
-      }
-    }
-
-    setCompressing(false);
-    setCompressProgress(null);
-    fetchFiles();
-  }
-
-  async function handleGenerateAllThumbnails() {
-    // Only process files that don't have a thumbnail yet
-    const missing = await Promise.all(
-      files.map(async (f) => {
-        const res = await fetch(`/api/thumbnails/${encodeURIComponent(f.name)}`, { method: "HEAD" }).catch(() => null);
-        return res?.ok === false ? f : null;
-      })
-    ).then((results) => results.filter(Boolean) as typeof files);
-
-    if (missing.length === 0) {
-      toast.info("All files already have thumbnails");
-      return;
-    }
-
-    setGeneratingThumbs(true);
-    let succeeded = 0;
-    let failed = 0;
-
-    for (let i = 0; i < missing.length; i++) {
-      const file = missing[i];
-      setThumbProgress({ current: i + 1, total: missing.length });
-
-      try {
-        // Download PDF from server
-        const res = await fetch(`/api/files/${encodeURIComponent(file.name)}`);
-        if (!res.ok) throw new Error("Download failed");
-        const blob = await res.blob();
-        const fileObj = new File([blob], file.name, { type: "application/pdf" });
-
-        // Generate thumbnail
-        const { generateThumbnailBlob } = await import("@/lib/generate-thumbnail");
-        const thumb = await generateThumbnailBlob(fileObj);
-        if (!thumb) throw new Error("Render failed");
-
-        // Upload thumbnail
-        const uploadRes = await fetch(`/api/thumbnails/${encodeURIComponent(file.name)}`, {
-          method: "POST",
-          body: thumb,
-          headers: { "Content-Type": "image/jpeg" },
-        });
-        if (!uploadRes.ok) throw new Error("Upload failed");
-
-        succeeded++;
-      } catch {
-        failed++;
-      }
-    }
-
-    setGeneratingThumbs(false);
-    setThumbProgress(null);
-
-    if (failed === 0) {
-      toast.success(`Thumbnails generated for ${succeeded} file${succeeded !== 1 ? "s" : ""}`);
-    } else {
-      toast.warning(`${succeeded} succeeded, ${failed} failed`);
-    }
-  }
-
-  async function handleTagAll() {
-    const untagged = files.filter((f) => !f.tags || f.tags.length === 0);
-    if (untagged.length === 0) {
-      toast.info("All files already have tags");
-      return;
-    }
-
-    setBulkTagging(true);
-    let succeeded = 0;
-    let failed = 0;
-
-    for (let i = 0; i < untagged.length; i++) {
-      setBulkTagProgress({ current: i + 1, total: untagged.length });
-      try {
-        const res = await fetch("/api/admin/generate-tags", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fileName: untagged[i].name }),
-        });
-        if (res.ok) succeeded++;
-        else failed++;
-      } catch {
-        failed++;
-      }
-    }
-
-    setBulkTagging(false);
-    setBulkTagProgress(null);
-    fetchFiles();
-
-    if (failed === 0) {
-      toast.success(`Tags generated for ${succeeded} file${succeeded !== 1 ? "s" : ""}`);
-    } else {
-      toast.warning(`${succeeded} tagged, ${failed} failed`);
-    }
-  }
-
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/admin/login");
@@ -444,12 +269,8 @@ export default function AdminDashboard() {
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">
-              Admin Dashboard
-            </h1>
-            <p className="mt-1 text-muted-foreground">
-              Manage your PDF documents
-            </p>
+            <h1 className="text-3xl font-bold tracking-tight">Admin Dashboard</h1>
+            <p className="mt-1 text-muted-foreground">Manage your PDF documents</p>
           </div>
           <div className="flex items-center gap-2">
             <Link href="/admin/analytics">
@@ -475,7 +296,7 @@ export default function AdminDashboard() {
               Upload PDF
             </CardTitle>
             <CardDescription>
-              Select a PDF file to upload. Files over {COMPRESS_THRESHOLD_MB}MB are automatically compressed to ~10MB before uploading.
+              Select one or more PDFs to upload. Files over {COMPRESS_THRESHOLD_MB}MB are automatically compressed before uploading.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -512,44 +333,7 @@ export default function AdminDashboard() {
                 <FileText className="h-5 w-5" />
                 Uploaded Files
               </span>
-              <div className="flex items-center gap-2">
-                {files.some((f) => f.size > COMPRESS_THRESHOLD) && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCompressAll}
-                    disabled={compressing || loading}
-                  >
-                    <Minimize2 className="mr-2 h-4 w-4" />
-                    {compressing && compressProgress
-                      ? `${compressProgress.current} / ${compressProgress.total} — ${compressProgress.status ?? "Compressing..."}`
-                      : "Compress Large Files"}
-                  </Button>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleGenerateAllThumbnails}
-                  disabled={generatingThumbs || loading}
-                >
-                  <Image className="mr-2 h-4 w-4" />
-                  {generatingThumbs && thumbProgress
-                    ? `Thumbnails ${thumbProgress.current} / ${thumbProgress.total}...`
-                    : "Generate Thumbnails"}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleTagAll}
-                  disabled={bulkTagging || loading}
-                >
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  {bulkTagging && bulkTagProgress
-                    ? `Tagging ${bulkTagProgress.current} / ${bulkTagProgress.total}...`
-                    : "Tag All Untagged"}
-                </Button>
-                <Badge variant="secondary">{files.length} files</Badge>
-              </div>
+              <Badge variant="secondary">{files.length} files</Badge>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -571,7 +355,7 @@ export default function AdminDashboard() {
                       <TableHead>Uploaded</TableHead>
                       <TableHead>Tags</TableHead>
                       <TableHead>Visibility</TableHead>
-                      <TableHead className="w-[100px]">Actions</TableHead>
+                      <TableHead className="w-[60px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -611,33 +395,14 @@ export default function AdminDashboard() {
                           <div className="flex items-center gap-2">
                             <Switch
                               checked={file.is_public}
-                              onCheckedChange={() =>
-                                handleToggleVisibility(
-                                  file.name,
-                                  file.is_public
-                                )
-                              }
+                              onCheckedChange={() => handleToggleVisibility(file.name, file.is_public)}
                             />
-                            <Badge
-                              variant={
-                                file.is_public ? "secondary" : "outline"
-                              }
-                            >
+                            <Badge variant={file.is_public ? "secondary" : "outline"}>
                               {file.is_public ? "Public" : "Private"}
                             </Badge>
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title="Generate tags with AI"
-                            disabled={taggingFile === file.name}
-                            onClick={() => handleGenerateTags(file.name)}
-                          >
-                            <Sparkles className={`h-4 w-4 ${taggingFile === file.name ? "animate-pulse text-primary" : "text-muted-foreground"}`} />
-                          </Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button variant="ghost" size="icon">
@@ -646,9 +411,7 @@ export default function AdminDashboard() {
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>
-                                  Delete this PDF?
-                                </AlertDialogTitle>
+                                <AlertDialogTitle>Delete this PDF?</AlertDialogTitle>
                                 <AlertDialogDescription>
                                   This will permanently delete &ldquo;
                                   {getDisplayName(file.name)}
@@ -666,7 +429,6 @@ export default function AdminDashboard() {
                               </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
-                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
