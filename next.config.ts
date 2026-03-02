@@ -7,11 +7,6 @@ const nextConfig: NextConfig = {
   // Turbopack config (Next.js 16 default bundler)
   turbopack: {},
 
-  // Fixes Google Fonts fetch failing in some build environments (Vercel)
-  experimental: {
-    turbopackUseSystemTlsCerts: true,
-  },
-
   // Configure headers for security
   async headers() {
     return [
