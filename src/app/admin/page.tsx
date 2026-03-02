@@ -13,6 +13,7 @@ import {
   BarChart2,
   Sparkles,
   Minimize2,
+  Image,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,6 +62,8 @@ export default function AdminDashboard() {
   const [taggingFile, setTaggingFile] = useState<string | null>(null);
   const [bulkTagging, setBulkTagging] = useState(false);
   const [bulkTagProgress, setBulkTagProgress] = useState<{ current: number; total: number } | null>(null);
+  const [generatingThumbs, setGeneratingThumbs] = useState(false);
+  const [thumbProgress, setThumbProgress] = useState<{ current: number; total: number } | null>(null);
   const [compressing, setCompressing] = useState(false);
   const [compressProgress, setCompressProgress] = useState<{ current: number; total: number; status?: string } | null>(null);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; status?: string } | null>(null);
@@ -345,6 +348,64 @@ export default function AdminDashboard() {
     fetchFiles();
   }
 
+  async function handleGenerateAllThumbnails() {
+    // Only process files that don't have a thumbnail yet
+    const missing = await Promise.all(
+      files.map(async (f) => {
+        const res = await fetch(`/api/thumbnails/${encodeURIComponent(f.name)}`, { method: "HEAD" }).catch(() => null);
+        return res?.ok === false ? f : null;
+      })
+    ).then((results) => results.filter(Boolean) as typeof files);
+
+    if (missing.length === 0) {
+      toast.info("All files already have thumbnails");
+      return;
+    }
+
+    setGeneratingThumbs(true);
+    let succeeded = 0;
+    let failed = 0;
+
+    for (let i = 0; i < missing.length; i++) {
+      const file = missing[i];
+      setThumbProgress({ current: i + 1, total: missing.length });
+
+      try {
+        // Download PDF from server
+        const res = await fetch(`/api/files/${encodeURIComponent(file.name)}`);
+        if (!res.ok) throw new Error("Download failed");
+        const blob = await res.blob();
+        const fileObj = new File([blob], file.name, { type: "application/pdf" });
+
+        // Generate thumbnail
+        const { generateThumbnailBlob } = await import("@/lib/generate-thumbnail");
+        const thumb = await generateThumbnailBlob(fileObj);
+        if (!thumb) throw new Error("Render failed");
+
+        // Upload thumbnail
+        const uploadRes = await fetch(`/api/thumbnails/${encodeURIComponent(file.name)}`, {
+          method: "POST",
+          body: thumb,
+          headers: { "Content-Type": "image/jpeg" },
+        });
+        if (!uploadRes.ok) throw new Error("Upload failed");
+
+        succeeded++;
+      } catch {
+        failed++;
+      }
+    }
+
+    setGeneratingThumbs(false);
+    setThumbProgress(null);
+
+    if (failed === 0) {
+      toast.success(`Thumbnails generated for ${succeeded} file${succeeded !== 1 ? "s" : ""}`);
+    } else {
+      toast.warning(`${succeeded} succeeded, ${failed} failed`);
+    }
+  }
+
   async function handleTagAll() {
     const untagged = files.filter((f) => !f.tags || f.tags.length === 0);
     if (untagged.length === 0) {
@@ -484,6 +545,17 @@ export default function AdminDashboard() {
                       : "Compress Large Files"}
                   </Button>
                 )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleGenerateAllThumbnails}
+                  disabled={generatingThumbs || loading}
+                >
+                  <Image className="mr-2 h-4 w-4" />
+                  {generatingThumbs && thumbProgress
+                    ? `Thumbnails ${thumbProgress.current} / ${thumbProgress.total}...`
+                    : "Generate Thumbnails"}
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
