@@ -127,6 +127,29 @@ describe("POST /api/files", () => {
     const { status } = await parseResponse(await createUploadUrl(req));
     expect(status).toBe(400);
   });
+
+  it("returns 500 when Supabase createSignedUploadUrl fails", async () => {
+    sb._storage.createSignedUploadUrl.mockResolvedValue({
+      data: null,
+      error: { message: "Storage quota exceeded" },
+    });
+    const req = makeRequest("/api/files", {
+      method: "POST",
+      body: { fileName: "test.pdf" },
+    });
+    const { status } = await parseResponse(await createUploadUrl(req));
+    expect(status).toBe(500);
+  });
+
+  it("sanitises special characters from the filename", async () => {
+    const req = makeRequest("/api/files", {
+      method: "POST",
+      body: { fileName: "my book (2024).pdf" },
+    });
+    const { body } = await parseResponse<{ path: string }>(await createUploadUrl(req));
+    // Special chars replaced with underscores, still ends with .pdf
+    expect(body.path).toMatch(/[^()[\] ]+\.pdf$/);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -247,6 +270,16 @@ describe("PATCH /api/files/[id]", () => {
     const { status } = await parseResponse(await patchFile(req, makeParams({ id: "..%2Fetc" })));
     expect(status).toBe(400);
   });
+
+  it("returns 500 when setFileVisibility throws", async () => {
+    mockSetVisibility.mockRejectedValueOnce(new Error("DB connection lost"));
+    const req = makeRequest("/api/files/book.pdf", {
+      method: "PATCH",
+      body: { is_public: true },
+    });
+    const { status } = await parseResponse(await patchFile(req, makeParams({ id: "book.pdf" })));
+    expect(status).toBe(500);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -286,5 +319,16 @@ describe("DELETE /api/files/[id]", () => {
       await deleteFile(req, makeParams({ id: "..%2F.." }))
     );
     expect(status).toBe(400);
+  });
+
+  it("still returns 200 when DB row deletion fails (non-fatal)", async () => {
+    // Storage delete succeeds but DB cleanup fails — response should still be 200
+    vi.mocked(db.deletePdfFileRow).mockRejectedValueOnce(new Error("DB error"));
+    const req = makeRequest("/api/files/book.pdf", { method: "DELETE" });
+    const { status, body } = await parseResponse<{ success: boolean }>(
+      await deleteFile(req, makeParams({ id: "book.pdf" }))
+    );
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
   });
 });

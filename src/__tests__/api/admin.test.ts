@@ -228,4 +228,47 @@ describe("POST /api/admin/compress", () => {
     expect(typeof body.originalSize).toBe("number");
     expect(typeof body.reduced).toBe("boolean");
   });
+
+  it("returns reduced: false when compression yields no size reduction", async () => {
+    const { PDFDocument } = await import("pdf-lib");
+    vi.mocked(PDFDocument.load).mockResolvedValueOnce({
+      // Compressed result is LARGER than original (2MB + 1 byte)
+      save: vi.fn().mockResolvedValue(new Uint8Array(2_000_001)),
+    } as never);
+
+    const req = makeRequest("/api/admin/compress", {
+      method: "POST",
+      body: { fileName: "book.pdf" },
+    });
+    const { status, body } = await parseResponse<{ reduced: boolean; message: string }>(
+      await compress(req)
+    );
+    expect(status).toBe(200);
+    expect(body.reduced).toBe(false);
+    expect(body.message).toContain("unchanged");
+  });
+
+  it("returns 500 when pdf-lib fails to parse the file", async () => {
+    const { PDFDocument } = await import("pdf-lib");
+    vi.mocked(PDFDocument.load).mockRejectedValueOnce(new Error("Invalid PDF structure"));
+
+    const req = makeRequest("/api/admin/compress", {
+      method: "POST",
+      body: { fileName: "corrupt.pdf" },
+    });
+    const { status, body } = await parseResponse<{ error: string }>(await compress(req));
+    expect(status).toBe(500);
+    expect(body.error).toContain("Compression failed");
+  });
+
+  it("returns 500 when re-upload fails after compression", async () => {
+    sb._storage.update.mockResolvedValue({ error: { message: "Upload failed" } });
+    const req = makeRequest("/api/admin/compress", {
+      method: "POST",
+      body: { fileName: "book.pdf" },
+    });
+    const { status, body } = await parseResponse<{ error: string }>(await compress(req));
+    expect(status).toBe(500);
+    expect(body.error).toContain("Upload failed");
+  });
 });
