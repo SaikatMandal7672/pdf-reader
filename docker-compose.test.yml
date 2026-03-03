@@ -1,0 +1,28 @@
+# Optional: run integration tests against a real local Supabase instance.
+#
+# Prerequisites: Docker + Supabase CLI (`brew install supabase/tap/supabase`)
+#
+# Usage:
+#   supabase start          # starts local Supabase (Postgres + API + Storage)
+#   docker-compose -f docker-compose.test.yml up --abort-on-container-exit
+#
+# The unit tests in this project use mocks and don't need this.
+# Use this only when you want end-to-end validation against a real DB.
+
+services:
+  test:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      NEXT_PUBLIC_SUPABASE_URL: http://host.docker.internal:54321
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      ADMIN_PASSWORD: integration-test-password
+      ADMIN_SECRET: integration-test-secret-that-is-long-enough
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-placeholder}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-placeholder}
+    command: npm test
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
