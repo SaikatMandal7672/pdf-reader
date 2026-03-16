@@ -8,8 +8,7 @@ export function PdfViewer({ fileUrl }: PdfViewerProps) {
   return (
     <iframe
       src={fileUrl}
-      className="w-full rounded-lg border shadow-sm"
-      style={{ height: "calc(100vh - 130px)" }}
+      className="w-full flex-1 min-h-0"
       title="PDF Viewer"
     />
   );

@@ -11,18 +11,10 @@ export async function maybeCompressPdf(
 
   onProgress?.("Compressing...");
 
-  // Step 1: lossless recompression via pdf-lib (preserves text/selectable content)
+  // Lossless recompression only — preserves text selectability and image sharpness
   const lossless = await losslessCompress(file);
-  if (lossless.size <= TARGET_SIZE) {
-    onProgress?.(`Compressed ${formatSize(file.size)} → ${formatSize(lossless.size)}`);
-    return lossless;
-  }
-
-  // Step 2: lossy canvas re-render at reduced JPEG quality (rasterises pages)
-  onProgress?.("Compressing images...");
-  const lossy = await lossyCompress(lossless, onProgress);
-  onProgress?.(`Compressed ${formatSize(file.size)} → ${formatSize(lossy.size)}`);
-  return lossy;
+  onProgress?.(`Compressed ${formatSize(file.size)} → ${formatSize(lossless.size)}`);
+  return lossless;
 }
 
 // Lossless: restructure PDF object streams — preserves text selectability
